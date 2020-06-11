@@ -9,6 +9,7 @@ import org.deeplearning4j.api.storage.StatsStorage;
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
 import org.deeplearning4j.nn.conf.ComputationGraphConfiguration;
+import org.deeplearning4j.nn.conf.layers.CnnLossLayer;
 import org.deeplearning4j.nn.conf.layers.OutputLayer;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.transferlearning.FineTuneConfiguration;
@@ -51,7 +52,7 @@ public class UNetImplementation {
     private WeightInit weightInit = WeightInit.RELU;
     protected static Random rng = new Random(seed);
     protected static int epochs = 10;
-    private static int batchSize = 5;
+    private static int batchSize = 1;
 
     private static int width = 512;
     private static int height = 512;
@@ -59,7 +60,7 @@ public class UNetImplementation {
     public static final String dataPath = "/home/jstachera/dev/GSOC-2020/ISBI-DATASET";
 
     public static void main(String[] args) throws Exception {
-//        Vgg16.run();
+        //Vgg16.run();
 
         File trainData = new File(dataPath + "/train/images");
         File testData = new File(dataPath + "test");
@@ -93,22 +94,21 @@ public class UNetImplementation {
                 .setFeatureExtractor("conv2d_23")
                 .removeVertexKeepConnections("activation_23")
                 .addLayer("activation_23",
-                        new OutputLayer.Builder(LossFunctions.LossFunction.RECONSTRUCTION_CROSSENTROPY)
-                                .nIn(1)
-                                .nOut(1)
+                        new CnnLossLayer.Builder(LossFunctions.LossFunction.XENT)
                                 .weightInit(WeightInit.RELU)
                                 .activation(Activation.SIGMOID).build(), "conv2d_23")
                 .build();
+        System.out.println(unetTransfer.summary());
         unetTransfer.init();
 
         for (int i = 0; i < epochs; i++) {
             unetTransfer.fit(dataTrainIter);
             System.out.print("*** Completed epoch {} ***" + i);
-
             System.out.print("Evaluate model....");
-            Evaluation eval = unetTransfer.evaluate(dataTestIter);
-            System.out.print(eval.stats());
-            dataTestIter.reset();
+            System.out.println(dataTestIter.next());
+//            Evaluation eval = unetTransfer.evaluate(dataTestIter);
+//            System.out.print(eval.stats());
+//            dataTestIter.reset();
         }
     }
 }

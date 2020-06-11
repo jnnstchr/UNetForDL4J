@@ -25,7 +25,6 @@ public class LabelGenerator implements PathLabelGenerator {
         String dirName;
         file=new File(path);
         dirName=labelsDir+"/train/labels/"+file.getName();
-        System.out.println(dirName);
         try
         {
             INDArray origImg=imageLoader.asMatrix(new File(dirName));
