@@ -29,7 +29,6 @@ public class LabelGenerator implements PathLabelGenerator {
         try
         {
             INDArray origImg=imageLoader.asMatrix(new File(dirName));
-            System.out.println(origImg);
             return new NDArrayWritable(origImg);
         }
         catch(IOException ioe)

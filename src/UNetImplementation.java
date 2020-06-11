@@ -29,7 +29,9 @@ import org.nd4j.linalg.dataset.api.preprocessor.ImagePreProcessingScaler;
 import org.nd4j.linalg.dataset.api.preprocessor.NormalizerMinMaxScaler;
 import org.nd4j.linalg.factory.Nd4j;
 import org.nd4j.linalg.io.ClassPathResource;
+import org.nd4j.linalg.learning.config.AdaDelta;
 import org.nd4j.linalg.learning.config.Nesterovs;
+import org.nd4j.linalg.learning.config.Sgd;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
@@ -49,7 +51,7 @@ public class UNetImplementation {
     private WeightInit weightInit = WeightInit.RELU;
     protected static Random rng = new Random(seed);
     protected static int epochs = 10;
-    private static int batchSize = 2;
+    private static int batchSize = 5;
 
     private static int width = 512;
     private static int height = 512;
@@ -57,6 +59,7 @@ public class UNetImplementation {
     public static final String dataPath = "/home/jstachera/dev/GSOC-2020/ISBI-DATASET";
 
     public static void main(String[] args) throws Exception {
+//        Vgg16.run();
 
         File trainData = new File(dataPath + "/train/images");
         File testData = new File(dataPath + "test");
@@ -82,23 +85,28 @@ public class UNetImplementation {
         DL4JResources.setBaseDownloadURL("https://dl4jdata.blob.core.windows.net/");
 
         ZooModel zooModel = UNet.builder().build();
-
         ComputationGraph pretrainedNet = (ComputationGraph) zooModel.initPretrained(PretrainedType.SEGMENT);
+        System.out.println(pretrainedNet.summary());
 
-//        FineTuneConfiguration fineTuneConf = new FineTuneConfiguration.Builder()
-//                .optimizationAlgo(OptimizationAlgorithm.STOCHASTIC_GRADIENT_DESCENT)
-//                .updater(new Nesterovs(5e-5))
-//                .seed(seed)
-//                .build();
-        
-        pretrainedNet.init();
+
+        ComputationGraph unetTransfer = new TransferLearning.GraphBuilder(pretrainedNet)
+                .setFeatureExtractor("conv2d_23")
+                .removeVertexKeepConnections("activation_23")
+                .addLayer("activation_23",
+                        new OutputLayer.Builder(LossFunctions.LossFunction.RECONSTRUCTION_CROSSENTROPY)
+                                .nIn(1)
+                                .nOut(1)
+                                .weightInit(WeightInit.RELU)
+                                .activation(Activation.SIGMOID).build(), "conv2d_23")
+                .build();
+        unetTransfer.init();
 
         for (int i = 0; i < epochs; i++) {
-            pretrainedNet.fit(dataTrainIter);
+            unetTransfer.fit(dataTrainIter);
             System.out.print("*** Completed epoch {} ***" + i);
 
             System.out.print("Evaluate model....");
-            Evaluation eval = pretrainedNet.evaluate(dataTestIter);
+            Evaluation eval = unetTransfer.evaluate(dataTestIter);
             System.out.print(eval.stats());
             dataTestIter.reset();
         }
