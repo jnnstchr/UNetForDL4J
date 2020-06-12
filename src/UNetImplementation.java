@@ -3,6 +3,7 @@ import lombok.Builder;
 import org.bytedeco.mkl.global.mkl_rt;
 import org.datavec.api.records.listener.impl.LogRecordListener;
 import org.datavec.api.split.FileSplit;
+import org.datavec.api.writable.Writable;
 import org.datavec.image.loader.NativeImageLoader;
 import org.datavec.image.recordreader.ImageRecordReader;
 import org.deeplearning4j.api.storage.StatsStorage;
@@ -51,7 +52,7 @@ public class UNetImplementation {
     private static final int seed = 1234;
     private WeightInit weightInit = WeightInit.RELU;
     protected static Random rng = new Random(seed);
-    protected static int epochs = 10;
+    protected static int epochs = 5;
     private static int batchSize = 1;
 
     private static int width = 512;
@@ -59,36 +60,37 @@ public class UNetImplementation {
     private static int channels = 3;
     public static final String dataPath = "/home/jstachera/dev/GSOC-2020/ISBI-DATASET";
 
+
     public static void main(String[] args) throws Exception {
         //Vgg16.run();
 
         File trainData = new File(dataPath + "/train/images");
-        File testData = new File(dataPath + "test");
-        LabelGenerator labelMaker = new LabelGenerator(dataPath);
+        File testData = new File(dataPath + "/test/images");
+        LabelGenerator labelMakerTrain = new LabelGenerator(dataPath + "/train");
+        LabelGenerator labelMakerTest = new LabelGenerator(dataPath + "/test");
 
         FileSplit train = new FileSplit(trainData, NativeImageLoader.ALLOWED_FORMATS, rng);
         FileSplit test = new FileSplit(testData, NativeImageLoader.ALLOWED_FORMATS, rng);
 
-        ImageRecordReader rr = new ImageRecordReader(height, width, channels, labelMaker);
+        ImageRecordReader rrTrain = new ImageRecordReader(height, width, channels, labelMakerTrain);
+        rrTrain.initialize(train, null);
 
-        rr.initialize(train);
-        rr.setListeners(new LogRecordListener());
+        ImageRecordReader rrTest = new ImageRecordReader(height, width, channels, labelMakerTest);
+        rrTest.initialize(test, null );
+
         int labelIndex = 1;
 
-        DataSetIterator dataTrainIter = new RecordReaderDataSetIterator(rr, batchSize, labelIndex, labelIndex, true);
-        DataSetIterator dataTestIter = new RecordReaderDataSetIterator(rr, batchSize, labelIndex, labelIndex, true);
+        DataSetIterator dataTrainIter = new RecordReaderDataSetIterator(rrTrain, batchSize, labelIndex, labelIndex, true);
+        DataSetIterator dataTestIter = new RecordReaderDataSetIterator(rrTest, 1, labelIndex, labelIndex, true);
+        DL4JResources.setBaseDownloadURL("https://dl4jdata.blob.core.windows.net/");
 
+        ZooModel zooModel = UNet.builder().build();
+        ComputationGraph pretrainedNet = (ComputationGraph) zooModel.initPretrained(PretrainedType.SEGMENT);
 
         NormalizerMinMaxScaler scaler = new NormalizerMinMaxScaler(0, 1);
         scaler.fitLabel(true);
         scaler.fit(dataTrainIter);
         dataTrainIter.setPreProcessor(scaler);
-        DL4JResources.setBaseDownloadURL("https://dl4jdata.blob.core.windows.net/");
-
-        ZooModel zooModel = UNet.builder().build();
-        ComputationGraph pretrainedNet = (ComputationGraph) zooModel.initPretrained(PretrainedType.SEGMENT);
-        System.out.println(pretrainedNet.summary());
-
 
         ComputationGraph unetTransfer = new TransferLearning.GraphBuilder(pretrainedNet)
                 .setFeatureExtractor("conv2d_23")
@@ -98,17 +100,20 @@ public class UNetImplementation {
                                 .weightInit(WeightInit.RELU)
                                 .activation(Activation.SIGMOID).build(), "conv2d_23")
                 .build();
-        System.out.println(unetTransfer.summary());
-        unetTransfer.init();
 
+        unetTransfer.init();
         for (int i = 0; i < epochs; i++) {
             unetTransfer.fit(dataTrainIter);
-            System.out.print("*** Completed epoch {} ***" + i);
-            System.out.print("Evaluate model....");
-            System.out.println(dataTestIter.next());
-//            Evaluation eval = unetTransfer.evaluate(dataTestIter);
-//            System.out.print(eval.stats());
-//            dataTestIter.reset();
+            System.out.println("Completed epoch: " + i);
         }
-    }
+        //hardest part to do - evaluating the model
+        while (dataTestIter.hasNext()) {
+                DataSet t = dataTestIter.next();
+                System.out.println(t);
+                INDArray a = t.getFeatures();
+                INDArray b = t.getLabels();
+                System.out.println("features " + a);
+                System.out.println("labels " + b);
+            }
+        }
 }
