@@ -6,6 +6,7 @@ import org.datavec.api.records.listener.impl.LogRecordListener;
 import org.datavec.api.split.FileSplit;
 import org.datavec.api.split.InputSplit;
 import org.datavec.api.writable.Writable;
+import org.datavec.image.loader.ImageLoader;
 import org.datavec.image.loader.NativeImageLoader;
 import org.datavec.image.recordreader.ImageRecordReader;
 import org.deeplearning4j.api.storage.StatsStorage;
@@ -25,6 +26,7 @@ import org.deeplearning4j.zoo.model.UNet;
 import org.deeplearning4j.common.resources.DL4JResources;
 import org.nd4j.evaluation.classification.Evaluation;
 import org.nd4j.linalg.activations.Activation;
+import org.nd4j.linalg.api.buffer.DataBuffer;
 import org.nd4j.linalg.api.ndarray.INDArray;
 import org.nd4j.linalg.dataset.api.DataSet;
 import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
@@ -40,18 +42,20 @@ import org.nd4j.linalg.lossfunctions.LossFunctions;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.Random;
 
 import static java.lang.Math.toIntExact;
 
-@AllArgsConstructor
-@Builder
 public class UNetImplementation {
     private static final int seed = 1234;
     private WeightInit weightInit = WeightInit.RELU;
@@ -119,13 +123,14 @@ public class UNetImplementation {
         //hardest part to do - evaluating the model
     while (dataTestIter.hasNext()){
         DataSet t = dataTestIter.next();
-        INDArray features = t.getFeatures();
-        System.out.println("Input features: " + features);
-        INDArray labels = t.getLabels();
         INDArray[] predicted = unetTransfer.output(t.getFeatures());
-        System.out.println("Predicted output: "+ predicted.length);
-        System.out.println("Desired output: "+ labels);
-        System.out.println();
+        INDArray pred = predicted[0].reshape(new int[]{512, 512});
+        BufferedImage img = ImageLoader.toImage(pred);
+        int j = 0;
+        File outputfile = new File(j +".png");
+        j++;
+        ImageIO.write(img, "png", outputfile);
+
     }
     }
 }
