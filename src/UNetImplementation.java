@@ -121,16 +121,20 @@ public class UNetImplementation {
 //        System.out.print(eval.stats());
 //        dataTestIter.reset();
         //hardest part to do - evaluating the model
+        int j = 0;
     while (dataTestIter.hasNext()){
+
         DataSet t = dataTestIter.next();
+        scaler.revert(t);
         INDArray[] predicted = unetTransfer.output(t.getFeatures());
+        INDArray input = t.getFeatures();
         INDArray pred = predicted[0].reshape(new int[]{512, 512});
         BufferedImage img = ImageLoader.toImage(pred);
-        int j = 0;
         File outputfile = new File(j +".png");
-        j++;
         ImageIO.write(img, "png", outputfile);
-
+        dataTestIter.reset();
+        j++;
     }
+
     }
 }
