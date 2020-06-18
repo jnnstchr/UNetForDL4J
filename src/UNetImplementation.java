@@ -43,6 +43,8 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 
 import javax.imageio.ImageIO;
+import javax.swing.*;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.io.BufferedWriter;
@@ -129,7 +131,14 @@ public class UNetImplementation {
         INDArray[] predicted = unetTransfer.output(t.getFeatures());
         INDArray input = t.getFeatures();
         INDArray pred = predicted[0].reshape(new int[]{512, 512});
+        scaler.revertLabels(pred);
         BufferedImage img = ImageLoader.toImage(pred);
+        JFrame frame = new JFrame();
+            JLabel lblimage = new JLabel(new ImageIcon(img));
+            frame.getContentPane().add(lblimage, BorderLayout.CENTER);
+            frame.setSize(512, 512);
+            frame.setVisible(true);
+            System.out.println(img);
         File outputfile = new File(j +".png");
         ImageIO.write(img, "png", outputfile);
         dataTestIter.reset();
