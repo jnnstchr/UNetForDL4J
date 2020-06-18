@@ -1,5 +1,6 @@
 import lombok.AllArgsConstructor;
 import lombok.Builder;
+import org.apache.commons.math3.util.Pair;
 import org.bytedeco.mkl.global.mkl_rt;
 import org.datavec.api.io.filters.BalancedPathFilter;
 import org.datavec.api.records.listener.impl.LogRecordListener;
@@ -9,6 +10,10 @@ import org.datavec.api.writable.Writable;
 import org.datavec.image.loader.ImageLoader;
 import org.datavec.image.loader.NativeImageLoader;
 import org.datavec.image.recordreader.ImageRecordReader;
+import org.datavec.image.transform.FlipImageTransform;
+import org.datavec.image.transform.ImageTransform;
+import org.datavec.image.transform.PipelineImageTransform;
+import org.datavec.image.transform.WarpImageTransform;
 import org.deeplearning4j.api.storage.StatsStorage;
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
@@ -18,6 +23,7 @@ import org.deeplearning4j.nn.conf.layers.OutputLayer;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.transferlearning.FineTuneConfiguration;
 import org.deeplearning4j.nn.transferlearning.TransferLearning;
+import org.deeplearning4j.nn.transferlearning.TransferLearningHelper;
 import org.deeplearning4j.nn.weights.WeightInit;
 import org.deeplearning4j.optimize.listeners.ScoreIterationListener;
 import org.deeplearning4j.zoo.PretrainedType;
@@ -39,7 +45,14 @@ import org.nd4j.linalg.learning.config.AdaDelta;
 import org.nd4j.linalg.learning.config.Nesterovs;
 import org.nd4j.linalg.learning.config.Sgd;
 import org.nd4j.linalg.lossfunctions.LossFunctions;
+import org.nd4j.nativeblas.Nd4jCpu;
 import org.slf4j.LoggerFactory;
+
+import ij.IJ;
+import ij.ImagePlus;
+import ij.process.FloatProcessor;
+import ij.process.ImageProcessor;
+
 import org.slf4j.Logger;
 
 import javax.imageio.ImageIO;
@@ -72,8 +85,11 @@ public class UNetImplementation {
 
 
     public static void main(String[] args) throws Exception {
-        File trainData = new File(dataPath + "/train/image");
+        //Vgg16.run();
+
+        File trainData = new File(dataPath +  "/train/image");
         File testData = new File(dataPath + "/test/image");
+
         LabelGenerator labelMakerTrain = new LabelGenerator(dataPath + "/train");
         LabelGenerator labelMakerTest = new LabelGenerator(dataPath + "/test");
 
@@ -93,8 +109,8 @@ public class UNetImplementation {
         DataSetIterator dataTestIter = new RecordReaderDataSetIterator(rrTest, 1, labelIndex, labelIndex, true);
         DL4JResources.setBaseDownloadURL("https://dl4jdata.blob.core.windows.net/");
         ZooModel zooModel = UNet.builder().build();
+//        zooModel.setInputShape(new int [][]{{3, 512, 512}});
         ComputationGraph pretrainedNet = (ComputationGraph) zooModel.initPretrained(PretrainedType.SEGMENT);
-        System.out.println(pretrainedNet.summary());
         NormalizerMinMaxScaler scaler = new NormalizerMinMaxScaler(0, 1);
         scaler.fitLabel(true);
         scaler.fit(dataTrainIter);
@@ -111,12 +127,19 @@ public class UNetImplementation {
                                 .activation(Activation.SIGMOID).build(), "conv2d_23")
                 .build();
 
+
+
+        TransferLearningHelper transferLearningHelper =
+                new TransferLearningHelper(unetTransfer);
+        while (dataTrainIter.hasNext()) {
+            transferLearningHelper.fitFeaturized(dataTrainIter.next());
+        }
+        System.out.println(unetTransfer.summary());
         unetTransfer.init();
         for (int i = 0; i < epochs; i++) {
             unetTransfer.fit(dataTrainIter);
             System.out.println("Completed epoch: " + i);
         }
-
         System.out.print("Evaluate model....");
 
         //Evaluation eval = unetTransfer.evaluate(dataTestIter);
@@ -124,15 +147,21 @@ public class UNetImplementation {
 //        dataTestIter.reset();
         //hardest part to do - evaluating the model
         int j = 0;
-    while (dataTestIter.hasNext()){
+        while (dataTestIter.hasNext() ){
 
-        DataSet t = dataTestIter.next();
-        scaler.revert(t);
-        INDArray[] predicted = unetTransfer.output(t.getFeatures());
-        INDArray input = t.getFeatures();
-        INDArray pred = predicted[0].reshape(new int[]{512, 512});
-        scaler.revertLabels(pred);
-        BufferedImage img = ImageLoader.toImage(pred);
+            DataSet t = dataTestIter.next();
+            INDArray[] predicted = unetTransfer.output(t.getFeatures());
+            INDArray pred = predicted[0].reshape(new int[]{512, 512});
+            scaler.revertLabels(pred);
+            DataBuffer dataBuffer = pred.data();
+            double[] classificationResult = dataBuffer.asDouble();
+            ImageProcessor classifiedSliceProcessor = new FloatProcessor(512,512, classificationResult);
+
+            //segmented image instance
+            ImagePlus classifiedImage = new ImagePlus("pred"+j, classifiedSliceProcessor);
+            IJ.save(classifiedImage, dataPath + "/predict/pred-"+j+".png");
+            //classifiedImage.setCalibration(currentImage.getCalibration());
+        /*BufferedImage img = ImageLoader.toImage(pred);
         JFrame frame = new JFrame();
             JLabel lblimage = new JLabel(new ImageIcon(img));
             frame.getContentPane().add(lblimage, BorderLayout.CENTER);
@@ -140,10 +169,10 @@ public class UNetImplementation {
             frame.setVisible(true);
             System.out.println(img);
         File outputfile = new File(j +".png");
-        ImageIO.write(img, "png", outputfile);
-        dataTestIter.reset();
-        j++;
-    }
+        ImageIO.write(img, "png", outputfile);*/
+            //dataTestIter.reset();
+            j++;
+        }
 
     }
 }

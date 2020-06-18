@@ -12,6 +12,7 @@ public class Vgg16 {
 
         ZooModel zooModel = VGG16.builder().build();
         ComputationGraph pretrainedNet = (ComputationGraph) zooModel.initPretrained(PretrainedType.IMAGENET);
+
         System.out.println(pretrainedNet.summary());
 
     }
