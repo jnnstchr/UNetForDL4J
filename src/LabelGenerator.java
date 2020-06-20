@@ -27,8 +27,9 @@ public class LabelGenerator implements PathLabelGenerator {
         // TODO Auto-generated method stub
         String dirName;
         file=new File(path);
-        System.out.println(path);
+//        System.out.println(path);
         dirName=labelsDir + "/label/";
+        System.out.println(dirName);
         try
         {
             INDArray origImg=imageLoader.asMatrix(new File(dirName + file.getName()));
