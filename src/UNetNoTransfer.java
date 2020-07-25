@@ -2,10 +2,16 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import org.datavec.api.split.FileSplit;
 import org.datavec.image.loader.NativeImageLoader;
 import org.datavec.image.recordreader.ImageRecordReader;
+import org.datavec.image.transform.FlipImageTransform;
+import org.datavec.image.transform.ImageTransform;
+import org.datavec.image.transform.WarpImageTransform;
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator;
+import org.deeplearning4j.nn.api.Model;
 import org.deeplearning4j.nn.api.OptimizationAlgorithm;
 import org.deeplearning4j.nn.conf.*;
 import org.deeplearning4j.nn.conf.graph.MergeVertex;
@@ -13,6 +19,8 @@ import org.deeplearning4j.nn.conf.inputs.InputType;
 import org.deeplearning4j.nn.conf.layers.*;
 import org.deeplearning4j.nn.graph.ComputationGraph;
 import org.deeplearning4j.nn.weights.WeightInit;
+import org.deeplearning4j.zoo.ZooModel;
+import org.nd4j.evaluation.classification.Evaluation;
 import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.buffer.DataBuffer;
 import org.nd4j.linalg.api.buffer.DataType;
@@ -27,15 +35,25 @@ import org.nd4j.linalg.lossfunctions.LossFunctions;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 
+
+@AllArgsConstructor
+@Builder
 public class UNetNoTransfer {
-    private static final int seed = 1234;
-    private WeightInit weightInit = WeightInit.RELU;
-    protected static Random rng = new Random(seed);
-    protected static int epochs = 1;
+    @Builder.Default private long seed = 1234;
+    @Builder.Default private int[] inputShape = new int[] {3, 512, 512};
+    @Builder.Default private int numClasses = 0;
+    @Builder.Default private WeightInit weightInit = WeightInit.RELU;
+    @Builder.Default private IUpdater updater = new AdaDelta();
+    @Builder.Default private CacheMode cacheMode = CacheMode.NONE;
+    @Builder.Default private WorkspaceMode workspaceMode = WorkspaceMode.ENABLED;
+    @Builder.Default private ConvolutionLayer.AlgoMode cudnnAlgoMode = ConvolutionLayer.AlgoMode.PREFER_FASTEST;
+    protected static Random rng = new Random(1234);
+    protected static int epochs = 5;
     private static int batchSize = 1;
-    private int[] inputShape = new int[] {3, 512, 512};
 
     private static int width = 512;
     private static int height = 512;
@@ -44,8 +62,6 @@ public class UNetNoTransfer {
 
     public static void main(String[] args) throws IOException {
 
-        System.setProperty("org.bytedeco.javacpp.maxphysicalbytes", "8G");
-        System.setProperty("org.bytedeco.javacpp.maxbytes", "4G");
         File trainData = new File(dataPath + "/train/image");
         File testData = new File(dataPath + "/test/image");
         LabelGenerator labelMakerTrain = new LabelGenerator(dataPath + "/train");
@@ -62,6 +78,11 @@ public class UNetNoTransfer {
         rrTest.initialize(test, null);
 
         int labelIndex = 1;
+//
+//        ImageTransform flipTransform1 = new FlipImageTransform(rng);
+//        ImageTransform flipTransform2 = new FlipImageTransform(new Random(123));
+//        ImageTransform warpTransform = new WarpImageTransform(rng, 42);
+//        List<ImageTransform> transforms = Arrays.asList(new ImageTransform[]{flipTransform1, warpTransform, flipTransform2});
 
         DataSetIterator dataTrainIter = new RecordReaderDataSetIterator(rrTrain, batchSize, labelIndex, labelIndex, true);
         DataSetIterator dataTestIter = new RecordReaderDataSetIterator(rrTest, 1, labelIndex, labelIndex, true);
@@ -71,61 +92,47 @@ public class UNetNoTransfer {
         dataTrainIter.setPreProcessor(scaler);
         scaler.fit(dataTestIter);
         dataTestIter.setPreProcessor(scaler);
+//        for (ImageTransform transform : transforms) {
+//            rrTrain.initialize(train, transform);
+//        }
 
         UNetNoTransfer un=new UNetNoTransfer();
-        ComputationGraphConfiguration.GraphBuilder graph = un.graphBuilder();
-        graph.addInputs("input").setInputTypes(InputType.convolutional(512,512,3));
-//
-//        ComputationGraphConfiguration conf = graph.build();
-//        ComputationGraph cg = new ComputationGraph(conf);
-        ComputationGraphConfiguration net = graph.build();
-        ComputationGraph gr = new ComputationGraph(net);
-        gr.init();
-        gr.fit(dataTrainIter);
-        int j = 0;
-        DataSet t = dataTestIter.next();
-        scaler.revert(t);
-        INDArray[] predicted = gr.output(t.getFeatures());
-        INDArray pred = predicted[0].reshape(new int[]{512, 512});
-        DataBuffer dataBuffer = pred.data();
-        double[] classificationResult = dataBuffer.asDouble();
-        ImageProcessor classifiedSliceProcessor = new FloatProcessor(512,512, classificationResult);
+        ComputationGraph cp = un.init();
 
-        //segmented image instance
-        ImagePlus classifiedImage = new ImagePlus("pred"+j, classifiedSliceProcessor);
-        IJ.save(classifiedImage, dataPath + "/predict/pred-"+j+".png");
+//        ComputationGraphConfiguration.GraphBuilder graph = un.graphBuilder();
+//        graph.addInputs("input").setInputTypes(InputType.convolutional(512,512,3));
+//        ComputationGraphConfiguration net = graph.build();
+//        ComputationGraph gr = new ComputationGraph(net);
+//        gr.init();
+        System.out.println(cp.summary());
+            cp.fit(dataTrainIter, epochs);
+            int j = 0;
+            while (dataTestIter.hasNext()) {
 
-//        while (dataTestIter.hasNext() ) {
-//            DataSet t = dataTestIter.next();
-//            scaler.revert(t);
-//
-//            INDArray[] predicted = gr.output(t.getFeatures());
-//            INDArray pred = predicted[0].reshape(new int[]{512, 512});
-//            DataBuffer dataBuffer = pred.data();
-//            double[] classificationResult = dataBuffer.asDouble();
-//            ImageProcessor classifiedSliceProcessor = new FloatProcessor(512,512, classificationResult);
-//
-//            //segmented image instance
-//            ImagePlus classifiedImage = new ImagePlus("pred"+j, classifiedSliceProcessor);
-//            IJ.save(classifiedImage, dataPath + "/predict/pred-"+j+".png");
-//            j++;
-//        }
-//        INDArray[] predicted = gr.output(dataTestIter.next().getFeatures());
-//        INDArray pred = predicted[0].reshape(new int[]{512, 512});
-//            DataBuffer dataBuffer = pred.data();
-//            double[] classificationResult = dataBuffer.asDouble();
-//            ImageProcessor classifiedSliceProcessor = new FloatProcessor(512,512, classificationResult);
-//
-//            //segmented image instance
-//            ImagePlus classifiedImage = new ImagePlus("pred", classifiedSliceProcessor);
-//            IJ.save(classifiedImage, dataPath + "/predict/" + j + ".png");
-    }
+                DataSet t = dataTestIter.next();
+                scaler.revert(t);
+                INDArray[] predicted = cp.output(t.getFeatures());
+                INDArray input = t.getFeatures();
+                INDArray pred = predicted[0].reshape(new int[]{512, 512});
+                Evaluation eval = new Evaluation();
+                eval.eval(pred.dup().reshape(512 * 512, 1), t.getLabels().dup().reshape(512 * 512, 1));
+                System.out.println(eval.stats());
+                DataBuffer dataBuffer = pred.data();
+                System.out.println(dataBuffer);
+                double[] classificationResult = dataBuffer.asDouble();
+                System.out.println(classificationResult);
+                ImageProcessor classifiedSliceProcessor = new FloatProcessor(512, 512, classificationResult);
+
+                //segmented image instance
+                ImagePlus classifiedImage = new ImagePlus("pred" + j, classifiedSliceProcessor);
+                IJ.save(classifiedImage, dataPath + "/predict/pred-" + j + ".png");
 
 
-    private CacheMode cacheMode = CacheMode.NONE;
-    private WorkspaceMode workspaceMode = WorkspaceMode.ENABLED;
-    private ConvolutionLayer.AlgoMode cudnnAlgoMode = ConvolutionLayer.AlgoMode.PREFER_FASTEST;
-    private IUpdater updater = new AdaDelta();
+                j++;
+            }
+
+        }
+
 
 
     public ComputationGraphConfiguration.GraphBuilder graphBuilder() {
@@ -243,7 +250,7 @@ public class UNetNoTransfer {
                         .convolutionMode(ConvolutionMode.Same).cudnnAlgoMode(cudnnAlgoMode)
                         .activation(Activation.RELU).build(), "conv9-2")
 
-                .addLayer("conv10", new ConvolutionLayer.Builder(1,1).stride(1,1).nOut(1)
+                .addLayer("conv10", new ConvolutionLayer.Builder(3,3).stride(1,1).nOut(1)
                         .convolutionMode(ConvolutionMode.Same).cudnnAlgoMode(cudnnAlgoMode)
                         .activation(Activation.IDENTITY).build(), "conv9-3")
                 .addLayer("output", new CnnLossLayer.Builder(LossFunctions.LossFunction.XENT)
@@ -251,7 +258,16 @@ public class UNetNoTransfer {
 
                 .setOutputs("output");
 
+
         return graph;
+    }
+    public ComputationGraph init() {
+        ComputationGraphConfiguration.GraphBuilder graph = this.graphBuilder();
+        graph.addInputs(new String[]{"input"}).setInputTypes(new InputType[]{InputType.convolutional((long)this.inputShape[2], (long)this.inputShape[1], (long)this.inputShape[0])});
+        ComputationGraphConfiguration conf = graph.build();
+        ComputationGraph model = new ComputationGraph(conf);
+        model.init();
+        return model;
     }
 
 }

@@ -56,6 +56,8 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.process.FloatProcessor;
 import ij.process.ImageProcessor;
+import org.nd4j.evaluation.classification.Evaluation;
+
 
 import org.slf4j.Logger;
 
@@ -67,6 +69,7 @@ import java.awt.image.DataBufferInt;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
@@ -88,113 +91,82 @@ public class UNetImplementation {
     private static int channels = 3;
     public static final String dataPath = "/home/jstachera/Documents/data";
 
+    public static void main(String[] args) throws IOException {
+        UNetImplementation uNetImplementation = new UNetImplementation();
+        uNetImplementation.importData(0.2);
+    }
 
-    public static void main(String[] args) throws Exception {
+    public void importData(double proportion) throws IOException {
 
-//        //Vgg16.run();
-//        System.setProperty("org.bytedeco.javacpp.maxphysicalbytes", "8G");
-//        System.setProperty("org.bytedeco.javacpp.maxbytes", "4G");
-            File trainData = new File(dataPath + "/train/image");
-            File testData = new File(dataPath + "/test/image");
+        LabelGenerator labelMaker = new LabelGenerator(dataPath + "/labels");
+        File mainPath = new File(dataPath);
+        FileSplit fileSplit = new FileSplit(mainPath, NativeImageLoader.ALLOWED_FORMATS, rng);
+        System.out.println(fileSplit.getRootDir());
+        int numExamples = Math.toIntExact(fileSplit.length());
+        int numLabels = fileSplit.getRootDir().listFiles(File::isDirectory).length;
+        BalancedPathFilter pathFilter = new BalancedPathFilter(rng, labelMaker, numExamples, numLabels, 1);
+        System.out.println(numLabels);
 
-            LabelGenerator labelMakerTrain = new LabelGenerator(dataPath + "/train");
-            LabelGenerator labelMakerTest = new LabelGenerator(dataPath + "/test");
-
-            FileSplit train = new FileSplit(trainData, NativeImageLoader.ALLOWED_FORMATS, rng);
-            FileSplit test = new FileSplit(testData, NativeImageLoader.ALLOWED_FORMATS, rng);
+        InputSplit[] inputSplit = fileSplit.sample(pathFilter, proportion, 1 - proportion);
+        InputSplit trainData = inputSplit[0];
+        InputSplit testData = inputSplit[1];
 
 
-            ImageRecordReader rrTrain = new ImageRecordReader(height, width, channels, labelMakerTrain);
-            rrTrain.initialize(train, null);
 
-            ImageRecordReader rrTest = new ImageRecordReader(height, width, channels, labelMakerTest);
-            rrTest.initialize(test, null);
+        ImageRecordReader rrTrain = new ImageRecordReader(height, width, channels, labelMaker);
+        rrTrain.initialize(trainData, null);
 
-            int labelIndex = 1;
+        ImageRecordReader rrTest = new ImageRecordReader(height, width, channels, labelMaker);
+        rrTest.initialize(testData, null);
 
-            DataSetIterator dataTrainIter = new RecordReaderDataSetIterator(rrTrain, batchSize, labelIndex, labelIndex, true);
-            DataSetIterator dataTestIter = new RecordReaderDataSetIterator(rrTest, 1, labelIndex, labelIndex, true);
-            DL4JResources.setBaseDownloadURL("https://dl4jdata.blob.core.windows.net/");
-            ZooModel zooModel = UNet.builder().build();
-            ComputationGraph pretrainedNet = (ComputationGraph) zooModel.initPretrained(PretrainedType.SEGMENT);
-            //System.out.println(pretrainedNet.summary());
-            NormalizerMinMaxScaler scaler = new NormalizerMinMaxScaler(0, 1);
-            scaler.fitLabel(true);
-            scaler.fit(dataTrainIter);
-            dataTrainIter.setPreProcessor(scaler);
-            scaler.fit(dataTestIter);
-            dataTestIter.setPreProcessor(scaler);
-            System.out.println(pretrainedNet.summary());
-//        ComputationGraph unetTransfer = new TransferLearning.GraphBuilder(pretrainedNet)
-//                .setFeatureExtractor("activation_23")
-            // .removeVertexKeepConnections("activation_23")
-//                .removeVertexKeepConnections("conv2d_23")
-//                .removeVertexKeepConnections("dropout_1")
-//                .removeVertexKeepConnections("activation_22")
-//                .removeVertexKeepConnections("batch_normalisation_22")
-//                .removeVertexKeepConnections("dropout1")
-//                .addLayer("conv2d_23",
-//                        new ConvolutionLayer.Builder(3,3).stride(1,1)
-//                                .nIn(32).nOut(32).convolutionMode(ConvolutionMode.Same)
-//                                .cudnnAlgoMode( ConvolutionLayer.AlgoMode.PREFER_FASTEST)
-//                                .activation(Activation.SIGMOID).build(), "conv2d_22")
+        int labelIndex = 1;
+        DataSetIterator dataTrainIter = new RecordReaderDataSetIterator(rrTrain, batchSize, labelIndex, labelIndex, true);
+        DataSetIterator dataTestIter = new RecordReaderDataSetIterator(rrTest, 1, labelIndex, labelIndex, true);
 
-            ComputationGraph unetTransfer = new TransferLearning.GraphBuilder(pretrainedNet)
-                    .setFeatureExtractor("conv2d_22")
-                    .removeVertexKeepConnections("activation_23")
-                    .addLayer("activation_23",
-                            new CnnLossLayer.Builder(LossFunctions.LossFunction.XENT)
-                                    .weightInit(WeightInit.RELU)
-                                    .activation(Activation.SIGMOID).build(), "conv2d_23")
-                    .build();
+        DL4JResources.setBaseDownloadURL("https://dl4jdata.blob.core.windows.net/");
+        ZooModel zooModel = UNet.builder().build();
+        ComputationGraph pretrainedNet = (ComputationGraph) zooModel.initPretrained(PretrainedType.SEGMENT);
+        //System.out.println(pretrainedNet.summary());
+        NormalizerMinMaxScaler scaler = new NormalizerMinMaxScaler(0, 1);
+        scaler.fitLabel(true);
+        scaler.fit(dataTrainIter);
+        dataTrainIter.setPreProcessor(scaler);
+        scaler.fit(dataTestIter);
+        dataTestIter.setPreProcessor(scaler);
+        System.out.println(pretrainedNet.summary());
 
-            System.out.println(unetTransfer.summary());
+        ComputationGraph unetTransfer = new TransferLearning.GraphBuilder(pretrainedNet)
+                .setFeatureExtractor("conv2d_23")
+                .removeVertexKeepConnections("activation_23")
+                .addLayer("activation_23",
+                        new CnnLossLayer.Builder(LossFunctions.LossFunction.XENT)
+                                .weightInit(WeightInit.RELU)
+                                .activation(Activation.SIGMOID).build(), "conv2d_23")
+                .build();
 
-            unetTransfer.init();
-            System.out.println(unetTransfer.summary());
-            for (int i = 0; i < epochs; i++) {
-                unetTransfer.fit(dataTrainIter);
-                System.out.println("Completed epoch: " + i + 1);
-            }
 
-            System.out.print("Evaluate model....");
+        unetTransfer.init();
+        System.out.println(unetTransfer.summary());
+        unetTransfer.fit(dataTrainIter, epochs);
 
-            //Evaluation eval = unetTransfer.evaluate(dataTestIter);
-//        System.out.print(eval.stats());
-//        dataTestIter.reset();
-            //hardest part to do - evaluating the model
-            int j = 0;
-            while (dataTestIter.hasNext() && j < 6) {
+        DataSet t = dataTestIter.next();
+        scaler.revert(t);
+        INDArray[] predicted = unetTransfer.output(t.getFeatures());
+        INDArray pred = predicted[0].reshape(new int[]{512, 512});
+        Evaluation eval = new Evaluation();
 
-                DataSet t = dataTestIter.next();
-                scaler.revert(t);
-                INDArray[] predicted = unetTransfer.output(t.getFeatures());
-                INDArray input = t.getFeatures();
-                INDArray pred = predicted[0].reshape(new int[]{512, 512});
-                Evaluation eval = new Evaluation();
-                eval.eval(pred.dup().reshape(512 * 512, 1), t.getLabels().dup().reshape(512 * 512, 1));
-                System.out.println(eval.stats());
-                DataBuffer dataBuffer = pred.data();
-                double[] classificationResult = dataBuffer.asDouble();
-                ImageProcessor classifiedSliceProcessor = new FloatProcessor(512, 512, classificationResult);
-
-                //segmented image instance
-                ImagePlus classifiedImage = new ImagePlus("pred" + j, classifiedSliceProcessor);
-                IJ.save(classifiedImage, dataPath + "/predict/pred-" + j + ".png");
-                dataTestIter.reset();
-                //classifiedImage.setCalibration(currentImage.getCalibration());
-        /*BufferedImage img = ImageLoader.toImage(pred);
-        JFrame frame = new JFrame();
-            JLabel lblimage = new JLabel(new ImageIcon(img));
-            frame.getContentPane().add(lblimage, BorderLayout.CENTER);
-            frame.setSize(512, 512);
-            frame.setVisible(true);
-            System.out.println(img);
-        File outputfile = new File(j +".png");
-        ImageIO.write(img, "png", outputfile);*/
-
-                j++;
-            }
-
-        }
+        eval.eval(pred.dup().reshape(512 * 512, 1), t.getLabels().dup().reshape(512 * 512, 1));
+        System.out.println(eval.stats());
+        DataBuffer dataBuffer = pred.data();
+        double[] classificationResult = dataBuffer.asDouble();
+        ImageProcessor classifiedSliceProcessor = new FloatProcessor(512, 512, classificationResult);
+        int j = 0;
+        //segmented image instance
+        ImagePlus classifiedImage = new ImagePlus("pred" + j, classifiedSliceProcessor);
+        IJ.save(classifiedImage, dataPath + "/predictions/"+ j + ".png");
+        j++;
+    }
+    public String toString(ComputationGraph uNet){
+        return uNet.summary();
+    }
 }
