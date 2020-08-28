@@ -95,8 +95,8 @@ public class SegNet {
         dataTestIter.setPreProcessor(vgg16ImagePreProcessor);
         NormalizerMinMaxScaler scaler;
 
-        FCNnoTransfer fcNnoTransfer = new FCNnoTransfer();
-        ComputationGraph cp = fcNnoTransfer.init();
+        SegNet segNet = new SegNet();
+        ComputationGraph cp = segNet.init();
 
         setScaler(dataTrainIter, dataTestIter, cp);
         cp.fit(dataTrainIter, epochs);
@@ -213,7 +213,7 @@ public class SegNet {
                         .layer(29, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
                                 .padding(1, 1).nOut(64).cudnnAlgoMode(cudnnAlgoMode).build(), "28")
                         .layer("30", new OutputLayer.Builder()
-                                .activation(Activation.SOFTMAX).build(), "29")
+                                .activation(Activation.SOFTMAX).nOut(512*512).build(), "29")
                         .setOutputs("30")
                         .setInputTypes(InputType.convolutionalFlat(inputShape[2], inputShape[1], inputShape[0]))
                         .build();
