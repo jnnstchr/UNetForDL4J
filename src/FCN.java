@@ -33,7 +33,7 @@ public class FCN<numClasses> {
     private static final int seed = 1234;
     private WeightInit weightInit = WeightInit.RELU;
     protected static Random rng = new Random(seed);
-    protected static int epochs = 1;
+    protected static int epochs = 4;
     private static int batchSize = 1;
 
     private static int width = 512;
@@ -68,13 +68,12 @@ public class FCN<numClasses> {
         int labelIndex = 1;
 
         DataSetIterator dataTrainIter = new RecordReaderDataSetIterator(rrTrain, batchSize, labelIndex, labelIndex, true);
-        DataSetIterator dataTestIter = new RecordReaderDataSetIterator(rrTest, 1, labelIndex, labelIndex, true);
+        DataSetIterator dataTestIter = new RecordReaderDataSetIterator(rrTest, batchSize, labelIndex, labelIndex, true);
 
         VGG16ImagePreProcessor vgg16ImagePreProcessor = new VGG16ImagePreProcessor();
         dataTrainIter.setPreProcessor(vgg16ImagePreProcessor);
         dataTestIter.setPreProcessor(vgg16ImagePreProcessor);
-        ZooModel zooModel = VGG16.builder().build();
-        zooModel.setInputShape(new int[][]{{7, 7, 512}});
+        ZooModel zooModel = VGG16.builder().inputShape(new int[] {3, 512, 512}).build();
         ComputationGraph pretrainedNet = (ComputationGraph) zooModel.initPretrained(PretrainedType.IMAGENET);
         System.out.println(pretrainedNet.summary());
         setScaler(dataTrainIter, dataTestIter, pretrainedNet);
@@ -83,12 +82,10 @@ public class FCN<numClasses> {
         ComputationGraph vggTransfer = new TransferLearning.GraphBuilder(pretrainedNet)
                 .setFeatureExtractor("fc2")
                 .removeVertexKeepConnections("predictions")
-
                 .addLayer("predictions",
                         new OutputLayer.Builder(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
                                 .nIn(4096)
-                                .nOut(2)
-                                .weightInit(WeightInit.XAVIER)
+                                .nOut(numClasses)
                                 .activation(Activation.SOFTMAX).build(), "fc2")
                 .setOutputs("predictions")
                 .build();

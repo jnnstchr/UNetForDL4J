@@ -22,6 +22,7 @@ import org.nd4j.evaluation.classification.Evaluation;
 import org.nd4j.linalg.activations.Activation;
 import org.nd4j.linalg.api.buffer.DataBuffer;
 import org.nd4j.linalg.api.ndarray.INDArray;
+import org.nd4j.linalg.api.ops.impl.transforms.custom.SoftMax;
 import org.nd4j.linalg.dataset.api.DataSet;
 import org.nd4j.linalg.dataset.api.iterator.DataSetIterator;
 import org.nd4j.linalg.dataset.api.preprocessor.NormalizerMinMaxScaler;
@@ -34,7 +35,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Random;
 
-public class FCNnoTransfer {
+public class SegNet {
     private static final int seed = 1234;
     private WeightInit weightInit = WeightInit.RELU;
     protected static Random rng = new Random(seed);
@@ -186,7 +187,7 @@ public class FCNnoTransfer {
                         //upsample
                         .layer(16, new Upsampling2D.Builder(2).build(), "15")
                         .layer(17, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
-                                .padding(1, 1).nOut(256).cudnnAlgoMode(cudnnAlgoMode).build(), "16")
+                            .padding(1, 1).nOut(256).cudnnAlgoMode(cudnnAlgoMode).build(), "16")
                         .layer(18, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
                                 .padding(1, 1).nOut(256).cudnnAlgoMode(cudnnAlgoMode).build(), "17")
                         .layer(19, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
@@ -211,7 +212,9 @@ public class FCNnoTransfer {
                                 .padding(1, 1).nOut(64).cudnnAlgoMode(cudnnAlgoMode).build(), "27")
                         .layer(29, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
                                 .padding(1, 1).nOut(64).cudnnAlgoMode(cudnnAlgoMode).build(), "28")
-                        .setOutputs("29")
+                        .layer("30", new OutputLayer.Builder()
+                                .activation(Activation.SOFTMAX).build(), "29")
+                        .setOutputs("30")
                         .setInputTypes(InputType.convolutionalFlat(inputShape[2], inputShape[1], inputShape[0]))
                         .build();
 
@@ -226,4 +229,3 @@ public class FCNnoTransfer {
     }
 
 }
-
