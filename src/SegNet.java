@@ -93,18 +93,17 @@ public class SegNet {
         VGG16ImagePreProcessor vgg16ImagePreProcessor = new VGG16ImagePreProcessor();
         dataTrainIter.setPreProcessor(vgg16ImagePreProcessor);
         dataTestIter.setPreProcessor(vgg16ImagePreProcessor);
-        NormalizerMinMaxScaler scaler;
 
         SegNet segNet = new SegNet();
         ComputationGraph cp = segNet.init();
-
-        setScaler(dataTrainIter, dataTestIter, cp);
+        NormalizerMinMaxScaler scaler = new NormalizerMinMaxScaler(0, 1);
+        setScaler(scaler, dataTrainIter, dataTestIter, cp);
         cp.fit(dataTrainIter, epochs);
 
         int j = 0;
         while (dataTestIter.hasNext()) {
             DataSet t = dataTestIter.next();
-//            scaler.revert(t);
+            scaler.revert(t);
             INDArray[] predicted = cp.output(t.getFeatures());
             INDArray pred = predicted[0].reshape(new int[]{512, 512});
             Evaluation eval = new Evaluation();
@@ -122,8 +121,7 @@ public class SegNet {
         }
     }
 
-    static void setScaler(DataSetIterator dataTrainIter, DataSetIterator dataTestIter, ComputationGraph pretrainedNet) {
-        NormalizerMinMaxScaler scaler = new NormalizerMinMaxScaler(0, 1);
+    static void setScaler(NormalizerMinMaxScaler scaler, DataSetIterator dataTrainIter, DataSetIterator dataTestIter, ComputationGraph pretrainedNet) {
         scaler.fitLabel(true);
         scaler.fit(dataTrainIter);
         dataTrainIter.setPreProcessor(scaler);
@@ -213,7 +211,7 @@ public class SegNet {
                         .layer(29, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
                                 .padding(1, 1).nOut(64).cudnnAlgoMode(cudnnAlgoMode).build(), "28")
                         .layer("30", new OutputLayer.Builder()
-                                .activation(Activation.SOFTMAX).nOut(512*512).build(), "29")
+                                .activation(Activation.SOFTMAX).build(), "29")
                         .setOutputs("30")
                         .setInputTypes(InputType.convolutionalFlat(inputShape[2], inputShape[1], inputShape[0]))
                         .build();

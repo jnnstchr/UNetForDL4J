@@ -52,13 +52,13 @@ public class UNetNoTransfer {
     @Builder.Default private WorkspaceMode workspaceMode = WorkspaceMode.ENABLED;
     @Builder.Default private ConvolutionLayer.AlgoMode cudnnAlgoMode = ConvolutionLayer.AlgoMode.PREFER_FASTEST;
     protected static Random rng = new Random(1234);
-    protected static int epochs = 5;
+    protected static int epochs = 3;
     private static int batchSize = 1;
 
     private static int width = 512;
     private static int height = 512;
     private static int channels = 3;
-    public static final String dataPath = "/home/jstachera/Documents/data";
+    public static final String dataPath = "/home/jstachera/ekek/Training/deeplearning";
 
     public static void main(String[] args) throws IOException {
 
@@ -267,6 +267,7 @@ public class UNetNoTransfer {
         ComputationGraphConfiguration conf = graph.build();
         ComputationGraph model = new ComputationGraph(conf);
         model.init();
+        System.out.println(model.summary());
         return model;
     }
 

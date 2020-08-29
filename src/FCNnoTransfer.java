@@ -28,7 +28,6 @@ import org.nd4j.linalg.dataset.api.preprocessor.NormalizerMinMaxScaler;
 import org.nd4j.linalg.dataset.api.preprocessor.VGG16ImagePreProcessor;
 import org.nd4j.linalg.learning.config.IUpdater;
 import org.nd4j.linalg.learning.config.Nesterovs;
-import org.nd4j.linalg.lossfunctions.LossFunctions;
 
 import java.io.File;
 import java.io.IOException;
@@ -62,8 +61,8 @@ public class FCNnoTransfer {
     public String dataPath;
 
     public static void main(String[] args) throws IOException {
-        SegNet segNet = new SegNet();
-        segNet.importData();
+        FCNnoTransfer fcNnotransfer = new FCNnoTransfer();
+        fcNnotransfer.importData();
     }
 
     public void importData() throws IOException {
@@ -92,18 +91,17 @@ public class FCNnoTransfer {
         VGG16ImagePreProcessor vgg16ImagePreProcessor = new VGG16ImagePreProcessor();
         dataTrainIter.setPreProcessor(vgg16ImagePreProcessor);
         dataTestIter.setPreProcessor(vgg16ImagePreProcessor);
-        NormalizerMinMaxScaler scaler;
 
-        FCNnoTransfer fcNnoTransfer = new FCNnoTransfer();
-        ComputationGraph cp = fcNnoTransfer.init();
-
-        setScaler(dataTrainIter, dataTestIter, cp);
+        FCNnoTransfer fcNnotransfer = new FCNnoTransfer();
+        ComputationGraph cp = fcNnotransfer.init();
+        NormalizerMinMaxScaler scaler = new NormalizerMinMaxScaler(0, 1);
+        setScaler(scaler, dataTrainIter, dataTestIter, cp);
         cp.fit(dataTrainIter, epochs);
 
         int j = 0;
         while (dataTestIter.hasNext()) {
             DataSet t = dataTestIter.next();
-//            scaler.revert(t);
+            scaler.revert(t);
             INDArray[] predicted = cp.output(t.getFeatures());
             INDArray pred = predicted[0].reshape(new int[]{512, 512});
             Evaluation eval = new Evaluation();
@@ -121,8 +119,7 @@ public class FCNnoTransfer {
         }
     }
 
-    static void setScaler(DataSetIterator dataTrainIter, DataSetIterator dataTestIter, ComputationGraph pretrainedNet) {
-        NormalizerMinMaxScaler scaler = new NormalizerMinMaxScaler(0, 1);
+    static void setScaler(NormalizerMinMaxScaler scaler, DataSetIterator dataTrainIter, DataSetIterator dataTestIter, ComputationGraph pretrainedNet) {
         scaler.fitLabel(true);
         scaler.fit(dataTrainIter);
         dataTrainIter.setPreProcessor(scaler);
@@ -176,13 +173,19 @@ public class FCNnoTransfer {
                                 .padding(1, 1).nOut(512).cudnnAlgoMode(cudnnAlgoMode).build(), "10")
                         .layer(12, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
                                 .padding(1, 1).nOut(512).cudnnAlgoMode(cudnnAlgoMode).build(), "11")
+                        .layer(13, new SubsamplingLayer.Builder()
+                                .poolingType(SubsamplingLayer.PoolingType.MAX).kernelSize(2, 2)
+                                .stride(2, 2).build(), "12")
                         //block 5
                         .layer(13, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
-                                .padding(1, 1).nOut(512).cudnnAlgoMode(cudnnAlgoMode).build(), "12")
-                        .layer(14, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
                                 .padding(1, 1).nOut(512).cudnnAlgoMode(cudnnAlgoMode).build(), "13")
-                        .layer(15, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
+                        .layer(14, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
                                 .padding(1, 1).nOut(512).cudnnAlgoMode(cudnnAlgoMode).build(), "14")
+                        .layer(15, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
+                                .padding(1, 1).nOut(512).cudnnAlgoMode(cudnnAlgoMode).build(), "15")
+                        .layer(16, new SubsamplingLayer.Builder()
+                                .poolingType(SubsamplingLayer.PoolingType.MAX).kernelSize(2, 2)
+                                .stride(2, 2).build(), "15")
                         //upsample
                         .layer(16, new Upsampling2D.Builder(2).build(), "15")
                         .layer(17, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
@@ -211,7 +214,9 @@ public class FCNnoTransfer {
                                 .padding(1, 1).nOut(64).cudnnAlgoMode(cudnnAlgoMode).build(), "27")
                         .layer(29, new ConvolutionLayer.Builder().kernelSize(3, 3).stride(1, 1)
                                 .padding(1, 1).nOut(64).cudnnAlgoMode(cudnnAlgoMode).build(), "28")
-                        .setOutputs("29")
+                        .layer("30", new OutputLayer.Builder()
+                                .activation(Activation.SOFTMAX).nOut(512*512).build(), "29")
+                        .setOutputs("30")
                         .setInputTypes(InputType.convolutionalFlat(inputShape[2], inputShape[1], inputShape[0]))
                         .build();
 
@@ -226,4 +231,3 @@ public class FCNnoTransfer {
     }
 
 }
-
